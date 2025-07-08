@@ -9,16 +9,26 @@ from build_index import build_index
 import requests
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-from clip_utils import predict_place_name 
+import cloudinary
+import cloudinary.uploader
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Prevent MKL errors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["TOGETHER_API_KEY"] = "tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdCbpXE"
+
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["https://visualz-server.onrender.com"])
+
+cloudinary.config(
+  cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+  api_key=os.getenv("CLOUDINARY_API_KEY"),
+  api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
 UPLOAD_FOLDER = 'uploads'
-DB_FOLDER = 'db'
 INDEX_FILE = 'db_index.faiss'
 PATHS_FILE = 'db_paths.json'
 META_FILE = 'db_metadata.json'
@@ -86,6 +96,10 @@ def upload_image():
     final_filename = f"{timestamp}_{filename}"
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], final_filename)
     image.save(image_path)
+
+    upload_result = cloudinary.uploader.upload(image_path)
+    image_url = upload_result['secure_url']
+
     start_time = time.time()
     predicted_place_name = predict_place_name(image_path)
     end_time = time.time()
@@ -95,7 +109,6 @@ def upload_image():
     google_maps_link = None
     if predicted_place_name:
         google_maps_link = f"https://www.google.com/maps/search/{predicted_place_name.replace(' ', '+')}"
-
 
     embedding = get_clip_embedding(image_path).reshape(1, -1).astype("float32")
     top_k = min(4, index.ntotal)
@@ -108,18 +121,14 @@ def upload_image():
         if idx == -1 or dist < 0.6:
             continue
 
-        image_name = os.path.basename(db_paths[str(idx)])
-        meta = db_metadata.get(image_name, {})
-
-        # place_name = meta.get("place", os.path.splitext(image_name)[0])
-        # google_maps_link = f"https://www.google.com/maps/search/{place_name.replace(' ', '+')}"
+        image_url_match = db_paths[str(idx)]
+        meta = db_metadata.get(os.path.basename(image_url_match), {})
 
         matches.append({
-            "path": image_name,
+            "path": image_url_match,
             "distance": dist,
             "lat": meta.get("lat"),
             "lon": meta.get("lon"),
-            # "place": place_name,
             "map_link": google_maps_link
         })
 
@@ -131,16 +140,9 @@ def upload_image():
         "google_maps_link": google_maps_link
     })
 
-
-
 @app.route('/uploads/<filename>')
 def serve_uploaded(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-
-@app.route('/db/<filename>')
-def serve_db(filename):
-    return send_from_directory(DB_FOLDER, filename)
 
 @app.route('/api/test')
 def test():

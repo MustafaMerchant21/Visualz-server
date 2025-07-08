@@ -4,6 +4,17 @@ import faiss
 import json
 import numpy as np
 from clip_utils import get_clip_embedding
+import cloudinary
+import cloudinary.uploader
+from dotenv import load_dotenv
+
+load_dotenv()
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
 def build_index():
     DB_FOLDER = "db"
@@ -25,7 +36,10 @@ def build_index():
             print(f"✅ Embedded Successful: {fname}")
             embedding = embedding.astype('float32')
             index.add(embedding.reshape(1, -1))
-            paths[len(paths)] = fname  # Use len(paths) to keep consistent indexing
+
+            upload_result = cloudinary.uploader.upload(fpath)
+            image_url = upload_result['secure_url']
+            paths[len(paths)] = image_url
 
         except Exception as e:
             print(f"❌ Error processing {fname}: {e}")
@@ -34,7 +48,7 @@ def build_index():
 
     faiss.write_index(index, "db_index.faiss")
     with open("db_paths.json", "w") as f:
-        json.dump(paths, f)
+        json.dump(paths, f, indent=2)
 
     print(f"\n✅ Indexed {len(paths)} images.")
     print(f"⚠️ Skipped {num_skipped} images due to errors.")
