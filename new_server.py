@@ -9,11 +9,6 @@ from build_index import build_index
 import requests
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-import cloudinary
-import cloudinary.uploader
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Prevent MKL errors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -21,12 +16,6 @@ os.environ["TOGETHER_API_KEY"] = "tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdC
 
 app = Flask(__name__)
 CORS(app, origins=["https://visualz-server.onrender.com"])
-
-cloudinary.config(
-  cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-  api_key=os.getenv("CLOUDINARY_API_KEY"),
-  api_secret=os.getenv("CLOUDINARY_API_SECRET")
-)
 
 UPLOAD_FOLDER = 'uploads'
 INDEX_FILE = 'db_index.faiss'
@@ -96,9 +85,6 @@ def upload_image():
     final_filename = f"{timestamp}_{filename}"
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], final_filename)
     image.save(image_path)
-
-    upload_result = cloudinary.uploader.upload(image_path)
-    image_url = upload_result['secure_url']
 
     start_time = time.time()
     predicted_place_name = predict_place_name(image_path)
