@@ -3,34 +3,28 @@ from werkzeug.utils import secure_filename
 from flask_cors import CORS
 import os, time, json
 import faiss
-import numpy as np
-from clip_utils import get_clip_embedding
-from build_index import build_index
-
-# build_index()
+from clip_utils import get_clip_embedding, predict_place_name
 
 # Prevent MKL errors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+os.environ["TOGETHER_API_KEY"] = "tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdCbpXE"
 
 app = Flask(__name__)
-CORS(app)
-
-with open("db_metadata.json", "r") as f:
-    db_metadata = json.load(f)
-
+CORS(app, origins=["https://visualz-server.onrender.com"])
 
 UPLOAD_FOLDER = 'uploads'
-DB_FOLDER = 'db'
 INDEX_FILE = 'db_index.faiss'
 PATHS_FILE = 'db_paths.json'
+META_FILE = 'db_metadata.json'
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Load FAISS index and paths
 index = faiss.read_index(INDEX_FILE)
 with open(PATHS_FILE, 'r') as f:
     db_paths = json.load(f)
+with open(META_FILE, 'r') as f:
+    db_metadata = json.load(f)
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
@@ -42,78 +36,55 @@ def upload_image():
     timestamp = int(time.time())
     final_filename = f"{timestamp}_{filename}"
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], final_filename)
+    image.save(image_path)
 
-    try:
-        image.save(image_path)
-        print(f"[INFO] Image saved at {image_path}")
+    start_time = time.time()
+    predicted_place_name = predict_place_name(image_path)
+    end_time = time.time()
+    print(f"[Together AI] Predicted: {predicted_place_name}")
+    print(f"[Together AI] Time taken: {end_time-start_time:.2f}seconds")
 
-        print("[INFO] Getting CLIP embedding...")
-        embedding = get_clip_embedding(image_path).reshape(1, -1).astype("float32")
-        print("[INFO] Embedding generated")
+    google_maps_link = None
+    if predicted_place_name:
+        google_maps_link = f"https://www.google.com/maps/search/{predicted_place_name.replace(' ', '+')}"
 
-        # FAISS search
-        top_k = min(4, index.ntotal)
-        D, I = index.search(embedding, top_k)
-        print(f"[INFO] FAISS search result D: {D}")
-        print(f"[INFO] FAISS search result I: {I}")
+    embedding = get_clip_embedding(image_path).reshape(1, -1).astype("float32")
+    top_k = min(4, index.ntotal)
+    D, I = index.search(embedding, top_k)
 
-        matches = []
-        threshold = 0.6 
-        for idx_raw, dist_raw in zip(I[0], D[0]):
-            try:
-                idx = int(idx_raw)
-                dist = float(dist_raw)
-                if idx == -1 or dist == -3.4028235e+38:
-                    continue
+    matches = []
+    for idx_raw, dist_raw in zip(I[0], D[0]):
+        idx = int(idx_raw)
+        dist = float(dist_raw)
+        if idx == -1 or dist < 0.6:
+            continue
 
-                # ✅ Only consider as match if distance >= 0.6
-                if dist >= threshold and 0 <= idx < len(db_paths):
-                    image_name = os.path.basename(db_paths[str(idx)])
-                    meta = db_metadata.get(image_name, {})
+        image_url_match = db_paths[str(idx)]
+        meta = db_metadata.get(os.path.basename(image_url_match), {})
 
-                    matches.append({
-                        "path": image_name,
-                        "distance": dist,
-                        "lat": meta.get("lat"),
-                        "lon": meta.get("lon")
-                    })
-
-            except Exception as e:
-                print(f"[WARN] Skipping result idx={idx_raw}, error: {e}")
-
-        # Return matches or no match message
-        if not matches:
-            return jsonify({
-                "message": "Uploaded, but no good matches found.",
-                "filename": final_filename,
-                "matches": []
-            }), 200
-        print(f"####\n{matches}\n####")
-        return jsonify({
-            "message": "Uploaded",
-            "filename": final_filename,
-            "matches": matches
+        matches.append({
+            "path": image_url_match,
+            "distance": dist,
+            "lat": meta.get("lat"),
+            "lon": meta.get("lon"),
+            "map_link": google_maps_link
         })
 
-    except Exception as e:
-        print(f"[ERROR] Upload error: {e}")
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        "message": "Uploaded",
+        "filename": final_filename,
+        "matches": matches,
+        "predicted_place": predicted_place_name,
+        "google_maps_link": google_maps_link
+    })
 
 @app.route('/uploads/<filename>')
 def serve_uploaded(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-@app.route('/db/<filename>')
-def serve_db(filename):
-    return send_from_directory(DB_FOLDER, filename)
-
 @app.route('/api/test')
 def test():
     return jsonify({"status": "API is working ✅"})
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
