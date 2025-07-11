@@ -13,7 +13,7 @@ os.environ["TOGETHER_API_KEY"] = "tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdC
 client = together.Together(api_key="tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdCbpXE")
 
 app = Flask(__name__)
-CORS(app, origins=["https://visualz-ai.vercel.app/"])
+CORS(app, origins=["*"])
 
 UPLOAD_FOLDER = 'uploads'
 INDEX_FILE = 'db_index.faiss'
