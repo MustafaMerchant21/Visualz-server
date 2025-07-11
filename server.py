@@ -3,11 +3,13 @@ from werkzeug.utils import secure_filename
 from flask_cors import CORS
 import os, time, json
 import faiss
-from clip_utils import get_clip_embedding, predict_place_name
+import together
 
 # Prevent MKL errors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 os.environ["TOGETHER_API_KEY"] = "tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdCbpXE"
+# Together AI setup
+client = together.Together(api_key="tgp_v1_HDWt-zkoh6PtS5aCanHP-MxOuOJaH7mQC-5DNdCbpXE")
 
 app = Flask(__name__)
 CORS(app, origins=["https://visualz-server.onrender.com"])
@@ -25,6 +27,38 @@ with open(PATHS_FILE, 'r') as f:
     db_paths = json.load(f)
 with open(META_FILE, 'r') as f:
     db_metadata = json.load(f)
+
+
+def predict_place_name(image_path: str) -> str:
+    with open(image_path, "rb") as f:
+        img_bytes = f.read()
+    img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+
+    response = client.chat.completions.create(
+        model="meta-llama/Llama-Vision-Free",
+        messages=[
+            {
+                "role": "system",
+                "content": "You are an AI expert in landmark and monument identification. Given an image, your task is to identify and return the **specific name** of the place, such as a **monument, landmark, building, or tourist attraction** visible in the image.- Be as **precise** as possible. - Do **not** return a generic location like a city, country, or region unless that is the only identifiable detail. - If the image contains a globally recognized monument (e.g., 'Arc de Triomphe', 'Statue of Liberty', 'Taj Mahal'), return **only** the name of that monument. - If no famous landmark is present, then return the most specific place visible (e.g., 'Central Park', not just 'New York'). - Do **not** return any explanations, just the **exact name** of the place or structure. For example: - ✅ 'Eiffel Tower' - ✅ 'Golden Gate Bridge' - ✅ 'Petra Treasury' - 🚫 Not: 'Paris', 'California', or 'Jordan'. Return only the name of the place as a single string. No extra text or sentences."
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{img_b64}"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=20,
+        temperature=0.2,
+    )
+
+    content = response.choices[0].message.content.strip()
+    return content if content else None
 
 @app.route('/upload', methods=['POST'])
 def upload_image():
