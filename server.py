@@ -4,6 +4,7 @@ from flask_cors import CORS
 import os, time, json
 import faiss
 import together
+import base64
 
 # Prevent MKL errors
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -82,32 +83,32 @@ def upload_image():
     if predicted_place_name:
         google_maps_link = f"https://www.google.com/maps/search/{predicted_place_name.replace(' ', '+')}"
 
-    embedding = get_clip_embedding(image_path).reshape(1, -1).astype("float32")
-    top_k = min(4, index.ntotal)
-    D, I = index.search(embedding, top_k)
+    # embedding = get_clip_embedding(image_path).reshape(1, -1).astype("float32")
+    # top_k = min(4, index.ntotal)
+    # D, I = index.search(embedding, top_k)
 
-    matches = []
-    for idx_raw, dist_raw in zip(I[0], D[0]):
-        idx = int(idx_raw)
-        dist = float(dist_raw)
-        if idx == -1 or dist < 0.6:
-            continue
+    # matches = []
+    # for idx_raw, dist_raw in zip(I[0], D[0]):
+    #     idx = int(idx_raw)
+    #     dist = float(dist_raw)
+    #     if idx == -1 or dist < 0.6:
+    #         continue
 
-        image_url_match = db_paths[str(idx)]
-        meta = db_metadata.get(os.path.basename(image_url_match), {})
+    #     image_url_match = db_paths[str(idx)]
+    #     meta = db_metadata.get(os.path.basename(image_url_match), {})
 
-        matches.append({
-            "path": image_url_match,
-            "distance": dist,
-            "lat": meta.get("lat"),
-            "lon": meta.get("lon"),
-            "map_link": google_maps_link
-        })
+    #     matches.append({
+    #         "path": image_url_match,
+    #         "distance": dist,
+    #         "lat": meta.get("lat"),
+    #         "lon": meta.get("lon"),
+    #         "map_link": google_maps_link
+    #     })
 
     return jsonify({
         "message": "Uploaded",
         "filename": final_filename,
-        "matches": matches,
+        # "matches": matches,
         "predicted_place": predicted_place_name,
         "google_maps_link": google_maps_link
     })
